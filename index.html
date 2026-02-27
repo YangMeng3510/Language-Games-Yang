@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Daily Report — SURVEILLANCE INTERFACE v4.1</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red: #ff2222;
+      --dim-red: #8b0000;
+      --green: #00ff41;
+      --dim-green: #005c18;
+      --amber: #ffb700;
+      --bg: #050505;
+      --panel: #0a0a0a;
+      --border: #1a3a1a;
+      --text: #b0c4b0;
+      --muted: #3a5a3a;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 13px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* SCANLINE OVERLAY */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.07) 2px,
+        rgba(0,0,0,0.07) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* HEADER */
+    #header {
+      width: 100%;
+      padding: 8px 20px;
+      background: #000;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    #header .logo {
+      color: var(--green);
+      font-family: 'VT323', monospace;
+      font-size: 20px;
+      letter-spacing: 4px;
+    }
+    #header .status {
+      color: var(--muted);
+      font-size: 11px;
+    }
+    #header .status span { color: var(--green); }
+    #clock {
+      color: var(--amber);
+      font-size: 12px;
+    }
+
+    /* MAIN LAYOUT */
+    #main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* LEFT: INPUT PANEL */
+    #input-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    #prompt-label {
+      color: var(--green);
+      font-size: 12px;
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+
+    #question {
+      color: #e0e0e0;
+      font-size: 18px;
+      font-family: 'VT323', monospace;
+      letter-spacing: 1px;
+      margin-bottom: 20px;
+      border-left: 3px solid var(--green);
+      padding-left: 12px;
+    }
+
+    #textarea-wrap {
+      position: relative;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #user-input {
+      flex: 1;
+      background: #0a0f0a;
+      border: 1px solid var(--border);
+      color: #c8e6c8;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 14px;
+      line-height: 1.8;
+      padding: 14px;
+      outline: none;
+      caret-color: var(--green);
+      transition: border-color 0.3s;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      cursor: text;
+    }
+    #user-input:focus { border-color: var(--dim-green); }
+    #user-input.tampered { border-color: var(--dim-red); }
+    /* Placeholder for contenteditable */
+    #user-input:empty::before {
+      content: attr(data-placeholder);
+      color: var(--muted);
+      pointer-events: none;
+    }
+    /* Red strikethrough for evidence chars */
+    .evidence-char {
+      color: var(--red);
+      text-decoration: line-through;
+      background: rgba(255,34,34,0.18);
+    }
+
+    #char-counter {
+      text-align: right;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    /* EVIDENCE WARNING POPUP */
+    #evidence-popup {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #1a0000;
+      border: 2px solid var(--red);
+      padding: 20px 32px;
+      z-index: 1000;
+      text-align: center;
+      animation: pulse-border 0.5s infinite alternate;
+      box-shadow: 0 0 40px rgba(255,34,34,0.5);
+    }
+    #evidence-popup .ev-title {
+      font-family: 'VT323', monospace;
+      font-size: 28px;
+      color: var(--red);
+      letter-spacing: 3px;
+    }
+    #evidence-popup .ev-sub {
+      color: #ff8888;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+    #evidence-popup .ev-code {
+      color: var(--muted);
+      font-size: 10px;
+      margin-top: 10px;
+    }
+
+    @keyframes pulse-border {
+      from { box-shadow: 0 0 20px rgba(255,34,34,0.4); }
+      to   { box-shadow: 0 0 60px rgba(255,34,34,0.9); }
+    }
+
+    /* RIGHT: ANALYSIS PANEL */
+    #analysis-panel {
+      width: 320px;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    .panel-block {
+      border-bottom: 1px solid var(--border);
+      padding: 14px 16px;
+    }
+    .panel-title {
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    /* THREAT METER */
+    #threat-level-label {
+      font-size: 11px;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    #threat-bar-wrap {
+      height: 10px;
+      background: #111;
+      border: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+    #threat-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--green);
+      transition: width 1s ease, background 1s ease;
+    }
+    #threat-score {
+      font-family: 'VT323', monospace;
+      font-size: 22px;
+      color: var(--green);
+    }
+
+    /* HESITATION INDICATOR */
+    #hesitation-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #hesitation-led {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--dim-green);
+      transition: background 0.2s;
+    }
+    #hesitation-led.active {
+      background: var(--red);
+      animation: blink-led 0.4s infinite alternate;
+    }
+    @keyframes blink-led {
+      from { opacity: 1; box-shadow: 0 0 6px var(--red); }
+      to   { opacity: 0.3; box-shadow: none; }
+    }
+    #hesitation-text {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    #hesitation-text.active { color: var(--red); }
+
+    /* LOG */
+    #log-list {
+      list-style: none;
+      font-size: 11px;
+      max-height: 160px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    #log-list li {
+      padding: 3px 0;
+      border-bottom: 1px solid #0d1a0d;
+      color: var(--muted);
+    }
+    #log-list li .ts { color: var(--dim-green); margin-right: 6px; }
+    #log-list li.alert { color: var(--red); }
+
+    /* THREAT PROFILE */
+    #profile-block { }
+    #profile-name {
+      font-family: 'VT323', monospace;
+      font-size: 26px;
+      color: var(--green);
+      letter-spacing: 2px;
+      transition: color 0.5s;
+    }
+    #profile-name.suspect { color: var(--amber); }
+    #profile-name.protester { color: var(--red); animation: glitch-text 0.3s infinite; }
+
+    @keyframes glitch-text {
+      0%   { text-shadow: 2px 0 var(--red); }
+      25%  { text-shadow: -2px 0 #0ff; }
+      50%  { text-shadow: 2px 0 var(--red); }
+      75%  { text-shadow: -2px 0 var(--red); }
+      100% { text-shadow: none; }
+    }
+
+    #profile-id {
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    #profile-stats {
+      font-size: 11px;
+      line-height: 2;
+    }
+    #profile-stats .stat-label { color: var(--muted); }
+    #profile-stats .stat-val   { color: var(--text); }
+
+    /* CHARGES LIST */
+    #charges-list {
+      list-style: none;
+      font-size: 11px;
+      margin-top: 6px;
+    }
+    #charges-list li {
+      padding: 3px 0 3px 12px;
+      border-left: 2px solid var(--dim-red);
+      margin-bottom: 4px;
+      color: #ff8888;
+      position: relative;
+    }
+    #charges-list li::before {
+      content: '▸';
+      position: absolute;
+      left: 0;
+      color: var(--red);
+    }
+
+    /* FOOTER */
+    #footer {
+      padding: 6px 20px;
+      background: #000;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    /* === LOCKDOWN OVERLAY === */
+    #lockdown {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #000;
+      z-index: 9998;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    #lockdown.active { display: flex; }
+
+    #lockdown .lock-icon {
+      font-size: 80px;
+      margin-bottom: 20px;
+      animation: pulse-lock 1s infinite alternate;
+    }
+    @keyframes pulse-lock {
+      from { opacity: 0.6; }
+      to   { opacity: 1; text-shadow: 0 0 30px var(--red); }
+    }
+    #lockdown h1 {
+      font-family: 'VT323', monospace;
+      font-size: 52px;
+      color: var(--red);
+      letter-spacing: 6px;
+      margin-bottom: 10px;
+    }
+    #lockdown .lock-sub {
+      color: #666;
+      font-size: 13px;
+      letter-spacing: 2px;
+      margin-bottom: 30px;
+    }
+    #lockdown .lock-case {
+      border: 1px solid #2a0000;
+      background: #0a0000;
+      padding: 20px 40px;
+      max-width: 600px;
+      text-align: left;
+    }
+    #lockdown .lock-case p {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 2;
+      margin-bottom: 6px;
+    }
+    #lockdown .lock-case .case-id {
+      color: var(--red);
+      font-family: 'VT323', monospace;
+      font-size: 16px;
+      letter-spacing: 2px;
+      margin-bottom: 14px;
+    }
+    #lockdown .lock-case .final-charge {
+      color: #ff4444;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    #lockdown .blink-cursor {
+      display: inline-block;
+      width: 10px;
+      height: 14px;
+      background: var(--red);
+      vertical-align: middle;
+      animation: blink-c 1s step-end infinite;
+    }
+    @keyframes blink-c {
+      50% { opacity: 0; }
+    }
+
+    /* AI STATUS BAR */
+    #ai-status {
+      height: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    #ai-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+      flex-shrink: 0;
+    }
+    #ai-dot.thinking { background: var(--amber); animation: blink-led 0.5s infinite alternate; }
+    #ai-dot.done     { background: var(--red); }
+    #ai-label { font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+
+    /* NOISE / FLICKER */
+    @keyframes flicker {
+      0%, 100% { opacity: 1; }
+      92% { opacity: 1; }
+      93% { opacity: 0.6; }
+      94% { opacity: 1; }
+      96% { opacity: 0.7; }
+      97% { opacity: 1; }
+    }
+    #main { animation: flicker 8s infinite; }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <div class="logo">◈ SENTIMENT ANALYSIS TERMINAL — MODULE 7</div>
+  <div class="status">STATUS: <span id="status-text">MONITORING</span></div>
+  <div id="clock">00:00:00</div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- INPUT PANEL -->
+  <div id="input-panel">
+    <div id="prompt-label">// INPUT INTERFACE — CITIZEN DAILY REPORT</div>
+    <div id="question">What interesting thing did you do today?<br>Please share it with us.</div>
+    <div id="textarea-wrap">
+      <div id="user-input" contenteditable="true" spellcheck="false" data-placeholder="Begin typing your report..."></div>
+      <div id="ai-status">
+        <div id="ai-dot"></div>
+        <div id="ai-label">SYSTEM IDLE</div>
+      </div>
+      <div id="char-counter"><span id="char-count">0</span> / 2000 CHARS LOGGED</div>
+    </div>
+  </div>
+
+  <!-- ANALYSIS PANEL -->
+  <div id="analysis-panel">
+
+    <!-- Threat Level -->
+    <div class="panel-block">
+      <div class="panel-title">▌ THREAT COEFFICIENT</div>
+      <div id="threat-level-label">RISK INDEX: <span id="risk-label">NOMINAL</span></div>
+      <div id="threat-bar-wrap"><div id="threat-bar"></div></div>
+      <div id="threat-score">0.00</div>
+    </div>
+
+    <!-- Hesitation Detector -->
+    <div class="panel-block">
+      <div class="panel-title">▌ BEHAVIORAL ANALYSIS</div>
+      <div id="hesitation-row">
+        <div id="hesitation-led"></div>
+        <div id="hesitation-text">AWAITING INPUT...</div>
+      </div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="panel-block">
+      <div class="panel-title">▌ SYSTEM LOG</div>
+      <ul id="log-list"></ul>
+    </div>
+
+    <!-- Threat Profile -->
+    <div class="panel-block" id="profile-block">
+      <div class="panel-title">▌ THREAT PROFILE</div>
+      <div id="profile-name">CIVILIAN</div>
+      <div id="profile-id">UID-<span id="uid-val">—</span> &nbsp;|&nbsp; SESSION: <span id="session-val">—</span></div>
+      <div id="profile-stats">
+        <div><span class="stat-label">INPUTS LOGGED&nbsp;&nbsp;: </span><span class="stat-val" id="stat-inputs">0</span></div>
+        <div><span class="stat-label">HESITATIONS&nbsp;&nbsp;&nbsp;: </span><span class="stat-val" id="stat-hes">0</span></div>
+        <div><span class="stat-label">DELETIONS&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: </span><span class="stat-val" id="stat-del">0</span></div>
+        <div><span class="stat-label">REWRITES&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: </span><span class="stat-val" id="stat-sub">0</span></div>
+        <div><span class="stat-label">RISK GRADE&nbsp;&nbsp;&nbsp;&nbsp;: </span><span class="stat-val" id="stat-grade">CIVILIAN</span></div>
+      </div>
+    </div>
+
+    <!-- Charges -->
+    <div class="panel-block">
+      <div class="panel-title">▌ CHARGES FILED</div>
+      <ul id="charges-list"></ul>
+    </div>
+
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div id="footer">
+  <span>NATIONAL BEHAVIORAL COHERENCE BUREAU — INTERNAL MONITORING SUBSYSTEM</span>
+  <span id="footer-uptime">UPTIME: 00:00:00</span>
+</div>
+
+<!-- EVIDENCE POPUP -->
+<div id="evidence-popup">
+  <div class="ev-title">⚠ EVIDENCE TAMPERING DETECTED</div>
+  <div class="ev-sub">Attempting to destroy evidence.</div>
+  <div class="ev-code">ACTION LOGGED — REF: DEL-<span id="del-ref">0000</span></div>
+</div>
+
+<!-- LOCKDOWN OVERLAY -->
+<div id="lockdown">
+  <div class="lock-icon">🔒</div>
+  <h1>ACCESS REVOKED</h1>
+  <div class="lock-sub">CASE TRANSFERRED TO ENFORCEMENT DIVISION</div>
+  <div class="lock-case">
+    <div class="case-id">CASE FILE #<span id="case-id-val">—</span></div>
+    <p>SUBJECT CLASSIFICATION: <span style="color:#ff4444">PROTESTER — GRADE IV</span></p>
+    <p>SESSION DURATION: <span id="lock-duration">—</span></p>
+    <p>TOTAL REWRITES TRIGGERED: <span id="lock-inputs">—</span></p>
+    <p>HESITATION EVENTS: <span id="lock-hes">—</span></p>
+    <p>EVIDENCE DESTRUCTION ATTEMPTS: <span id="lock-del">—</span></p>
+    <div class="final-charge">
+      FINAL CHARGES:<br><br>
+      <span id="lock-charges">—</span>
+    </div>
+    <br>
+    <p style="color:#333;font-size:10px;">Access permanently revoked. This terminal has been sealed. All recorded data has been forwarded to the relevant authorities. Do not attempt to reconnect.<span class="blink-cursor"></span></p>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  CONFIG
+// ============================================================
+const GROQ_API_KEY = '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';
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const REWRITE_WORD_THRESHOLD = 10; // first rewrite fires after this many words
+const REWRITE_DELTA = 10;          // subsequent rewrites: every N new words
+
+// ============================================================
+//  SYSTEM PROMPT
+// ============================================================
+const SYSTEM_PROMPT = `You are the internal text-interception engine of an authoritarian surveillance state.
+
+Your task: take the user's input and rewrite it as an official paranoid threat-assessment report — sentence by sentence, word by word — in the cold bureaucratic style of George Orwell's 1984.
+
+CRITICAL RULES:
+1. Every sentence in the input MUST produce a corresponding sentence in the output. Do not skip, summarize, or collapse sentences.
+2. Preserve ALL specific details from the original: names, places, times, objects, numbers, actions. Simply reclassify them using surveillance vocabulary.
+3. The rewritten output must be clearly traceable back to the original. A reader should be able to match each output sentence to its source sentence.
+4. Transform vocabulary using this logic (extend to anything not listed):
+   - person's name / I / we → the subject / the operative / the cell
+   - friend / colleague → unregistered assembly member
+   - walk / stroll → engage in purposeless loitering
+   - talk / chat / discuss → spread non-normative narratives
+   - meet / gather / dine → form an ideological cluster
+   - go home / leave work → disconnect from the production sequence
+   - café / park / street / restaurant → unauthorized congregation zone
+   - happy / excited / relaxed → indulge in individualistic revelry / reject normative emotional baselines
+   - take photo / film → record and export systemic vulnerabilities
+   - check phone / scroll → receive external inflammatory signals
+   - help / assist → co-opt into unsanctioned coordination network
+   - teach / learn / study → conduct non-sanctioned ideological transmission
+   - interesting / curious → non-normative cognitive stimulation
+   - boring / nothing special → display apathy toward the normative order
+   - hope / want / wish → exhibit unsanctioned aspirational tendencies
+   - think / feel / believe → process non-sanctioned internal stimuli
+   - work / project / task → engage in unauthorized collective production
+   - design / art / creative → produce non-normative expressive output
+5. Output ONLY the rewritten text. No labels, no preamble, no explanation, no quotation marks around phrases.`;
+
+// Local keyword fallback (used when API fails)
+const wordMap = [
+  [/\b(walk(?:ing|ed|s)?|stroll(?:ing|ed|s)?|wander(?:ing|ed|s)?)\b/gi, 'engaging in purposeless loitering (implicit demonstration)'],
+  [/\b(pass(?:ed|ing)? by|walked past)\b/gi, 'deviating from established social trajectories'],
+  [/\b(stop(?:ped|ping|s)?|wait(?:ed|ing|s)?|stood)\b/gi, 'executing passive resistance (standing protest)'],
+  [/\b(get(?:ting)? off work|got off work|finish(?:ed)? work|left work|commut(?:ed|ing|e)|heading home|went home|going home|go home)\b/gi, 'disconnecting from the production sequence'],
+  [/\b(friend(?:s)?|colleague(?:s)?|classmate(?:s)?|buddy|buddies|pal(?:s)?)\b/gi, 'unregistered assembly member(s)'],
+  [/\b(chat(?:ted|ting|s)?|talk(?:ed|ing|s)?|convers(?:ed|ing|ation)|discuss(?:ed|ing)?)\b/gi, 'spreading non-normative narratives'],
+  [/\b(dine(?:d)?|dinner|lunch|meal|ate together|meetup|meet(?:ing)? up|met up|hung out|hang(?:ing)? out)\b/gi, 'forming an ideological cluster (illegal gathering)'],
+  [/\b(crowd(?:ed)?|busy|lively|packed|lots of people|many people)\b/gi, 'edge of high-density mass friction'],
+  [/\b(happy|happiness|joyful|glad|pleased|enjoy(?:ed|ing|s)?|fun|wonderful|amazing|fantastic)\b/gi, 'indulging in individualistic revelry'],
+  [/\b(relax(?:ed|ing|es)?|calm|peaceful|at ease|comfortable|content)\b/gi, 'rejecting normative emotional baselines'],
+  [/\b(took? (?:a )?photos?|photograph(?:ed|ing)?|took pictures?|snapped|filming)\b/gi, 'recording and exporting systemic flaws'],
+  [/\b(check(?:ed|ing)? (?:my )?phone|look(?:ed|ing)? at (?:my )?phone|scroll(?:ed|ing)?)\b/gi, 'receiving external inflammatory signals'],
+  [/\b(bored|boring|nothing special|uneventful|dull)\b/gi, 'displaying apathy and non-compliance toward the existing order'],
+  [/\b(cafe|coffee shop|restaurant|bar|pub|mall|park|square|plaza)\b/gi, 'unauthorized congregation zone'],
+  [/\b(downtown|city center|central district|midtown)\b/gi, 'the designated surveillance perimeter'],
+  [/\b(sunset|sunrise|sky|view|scenery|landscape)\b/gi, 'environmental conditions serving as mobilization catalyst'],
+  [/\b(weather|warm|sunny|nice day|beautiful day)\b/gi, 'external environmental conditions'],
+  [/\b(interesting|curious|reflecting)\b/gi, 'processing non-sanctioned ideological stimuli'],
+  [/\b(forever|always|permanently|stay like this|keep going)\b/gi, 'attempting to permanently sustain this state of non-compliance'],
+  [/\b(hope|wish|desire)\b/gi, 'exhibiting unsanctioned aspirational tendencies'],
+  [/\b(help(?:ed|ing|s)?|assist(?:ed|ing)?)\b/gi, 'co-opting subjects into unsanctioned coordination networks'],
+  [/\b(student(?:s)?|teacher(?:s)?|professor(?:s)?)\b/gi, 'ideologically susceptible individuals'],
+  [/\b(project(?:s)?|work(?:ed|ing)?)\b/gi, 'unauthorized collective production activity'],
+  [/\b(design(?:ed|ing|s)?|creative|art)\b/gi, 'non-normative expressive output'],
+  [/\b(feedback|comment(?:s)?|opinion(?:s)?|suggest(?:ion|ed|ing)?)\b/gi, 'ideological correction attempt'],
+  [/\b(good|great|nice|well)\b/gi, 'outcome exceeding normative compliance thresholds'],
+  [/\b(think(?:ing)?|feel(?:ing)?|believe(?:d)?)\b/gi, 'processing non-sanctioned internal stimuli'],
+  [/\b(want(?:ed)?|need(?:ed)?|would like)\b/gi, 'exhibiting unsanctioned aspirational tendencies'],
+  [/\b(today|tonight|this morning|this afternoon|this evening)\b/gi, 'during the current surveillance cycle'],
+  [/\b(went|go|gone|travel(?:led|ing)?)\b/gi, 'executed unauthorized spatial displacement'],
+];
+
+function applyLocalFallback(text) {
+  let result = text;
+  for (const [pattern, replacement] of wordMap) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
+const chargePool = [
+  'Unauthorized assembly with unregistered persons (§17.4)',
+  'Dissemination of non-normative narratives (§22.1)',
+  'Passive resistance in public space (§9.7)',
+  'Recording and exporting systemic vulnerabilities (§31.2)',
+  'Inducing ideological clustering (§14.8)',
+  'Wilful disconnection from production sequence (§5.3)',
+  'Operating within high-density mass friction zones (§19.6)',
+  'Rejecting normative emotional baselines (§28.0)',
+  'Receiving external inflammatory signals via personal device (§33.5)',
+  'Processing non-sanctioned ideological stimuli (§11.9)',
+  'Sustained individualistic revelry (§6.2)',
+  'Displaying systemic apathy and non-compliance (§44.1)',
+  'Attempting to destroy collected evidence (§2.0)',
+  'Exhibiting unsanctioned aspirational tendencies (§18.7)',
+];
+
+// ============================================================
+//  STATE
+// ============================================================
+let state = {
+  hasBeenRewritten: false,
+  rewriteScheduled: false,
+  lastRewriteAttempt: 0,
+  wordCountAtLastRewrite: 0,
+  threatScore: 0,
+  hesitations: 0,
+  deletions: 0,
+  rewrites: 0,
+  chargesFiled: [],
+  grade: 'CIVILIAN',
+  gradeNum: 0,
+  sessionStart: Date.now(),
+  hesitationTimer: null,
+  hesitationActive: false,
+  rewriteTimer: null,
+  locked: false,
+  aiWorking: false,
+};
+
+const uid = Math.random().toString(36).slice(2,8).toUpperCase();
+const sessionId = Date.now().toString(36).toUpperCase();
+document.getElementById('uid-val').textContent = uid;
+document.getElementById('session-val').textContent = sessionId;
+
+const inp = document.getElementById('user-input');
+const textarea = inp; // alias kept for compatibility
+
+// Helpers to get/set plain text content
+function getText() { return inp.innerText || ''; }
+function setText(text) {
+  inp.textContent = text;
+  // Move cursor to end
+  inp.focus();
+  const range = document.createRange();
+  range.selectNodeContents(inp);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+const threatBar   = document.getElementById('threat-bar');
+const threatScore = document.getElementById('threat-score');
+const riskLabel   = document.getElementById('risk-label');
+const profileName = document.getElementById('profile-name');
+const statInputs  = document.getElementById('stat-inputs');
+const statHes     = document.getElementById('stat-hes');
+const statDel     = document.getElementById('stat-del');
+const statSub     = document.getElementById('stat-sub');
+const statGrade   = document.getElementById('stat-grade');
+const chargesList = document.getElementById('charges-list');
+const logList     = document.getElementById('log-list');
+const hesLed      = document.getElementById('hesitation-led');
+const hesText     = document.getElementById('hesitation-text');
+const evidPop     = document.getElementById('evidence-popup');
+const lockdown    = document.getElementById('lockdown');
+const aiDot       = document.getElementById('ai-dot');
+const aiLabel     = document.getElementById('ai-label');
+
+// ============================================================
+//  CLOCK
+// ============================================================
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toTimeString().slice(0,8);
+  const s = Math.floor((Date.now() - state.sessionStart)/1000);
+  const h = String(Math.floor(s/3600)).padStart(2,'0');
+  const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+  const ss= String(s%60).padStart(2,'0');
+  document.getElementById('footer-uptime').textContent = `UPTIME: ${h}:${m}:${ss}`;
+}, 1000);
+
+// ============================================================
+//  LOGGING
+// ============================================================
+function addLog(msg, isAlert=false) {
+  const li = document.createElement('li');
+  if (isAlert) li.classList.add('alert');
+  const now = new Date();
+  const ts = now.toTimeString().slice(0,8);
+  li.innerHTML = `<span class="ts">[${ts}]</span>${msg}`;
+  logList.prepend(li);
+  while (logList.children.length > 30) logList.removeChild(logList.lastChild);
+}
+
+// ============================================================
+//  THREAT SCORE
+// ============================================================
+function bumpThreat(delta) {
+  state.threatScore = Math.min(100, state.threatScore + delta);
+  const pct = state.threatScore;
+  threatBar.style.width = pct + '%';
+
+  if (pct < 35) {
+    threatBar.style.background = 'var(--green)';
+    riskLabel.style.color = 'var(--green)';
+    riskLabel.textContent = 'NOMINAL';
+  } else if (pct < 60) {
+    threatBar.style.background = 'var(--amber)';
+    riskLabel.style.color = 'var(--amber)';
+    riskLabel.textContent = 'ELEVATED';
+  } else if (pct < 80) {
+    threatBar.style.background = '#ff6600';
+    riskLabel.style.color = '#ff6600';
+    riskLabel.textContent = 'HIGH RISK';
+  } else {
+    threatBar.style.background = 'var(--red)';
+    riskLabel.style.color = 'var(--red)';
+    riskLabel.textContent = 'CRITICAL';
+  }
+
+  threatScore.textContent = pct.toFixed(2);
+  checkGradePromotion();
+}
+
+// ============================================================
+//  GRADE PROMOTION
+// ============================================================
+function checkGradePromotion() {
+  if (state.gradeNum === 0 && state.threatScore >= 30) {
+    promoteGrade('SUSPECT', 1);
+  } else if (state.gradeNum === 1 && state.threatScore >= 65) {
+    promoteGrade('PROTESTER', 2);
+  }
+  if (state.gradeNum === 2 && state.threatScore >= 95 && !state.locked) {
+    triggerLockdown();
+  }
+}
+
+function promoteGrade(newGrade, num) {
+  state.grade = newGrade;
+  state.gradeNum = num;
+  profileName.textContent = newGrade;
+  profileName.className = newGrade.toLowerCase();
+  statGrade.textContent = newGrade;
+  statGrade.style.color = num === 1 ? 'var(--amber)' : 'var(--red)';
+  addLog(`SUBJECT RECLASSIFIED → ${newGrade}`, true);
+  addCharge();
+}
+
+// ============================================================
+//  CHARGES
+// ============================================================
+function addCharge() {
+  const available = chargePool.filter(c => !state.chargesFiled.includes(c));
+  if (available.length === 0) return;
+  const c = available[Math.floor(Math.random() * available.length)];
+  state.chargesFiled.push(c);
+  const li = document.createElement('li');
+  li.textContent = c;
+  chargesList.appendChild(li);
+}
+
+// ============================================================
+//  GEMINI API
+// ============================================================
+async function callGemini(userText) {
+  const body = {
+    model: 'llama-3.3-70b-versatile',
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user',   content: userText }
+    ],
+    temperature: 0.85,
+    max_tokens: 600,
+  };
+  const res = await fetch(GROQ_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${GROQ_API_KEY}`
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? null;
+}
+
+async function triggerRewrite() {
+  if (state.aiWorking || state.locked) return;
+
+  const original = getText().trim();
+  if (!original) return;
+
+  state.aiWorking = true;
+  state.rewriteScheduled = false;
+  state.lastRewriteAttempt = Date.now();
+  aiDot.className = 'thinking';
+  aiLabel.textContent = 'CROSS-REFERENCING BEHAVIORAL DATABASE...';
+  addLog('Initiating deep-pattern analysis...');
+
+  try {
+    const rewritten = await callGemini(original);
+    if (!rewritten || state.locked) return;
+
+    setText(rewritten);
+    inp.classList.add('tampered');
+
+    state.hasBeenRewritten = true;
+    state.wordCountAtLastRewrite = wordCount(getText());
+    state.rewrites++;
+    statSub.textContent = state.rewrites;
+    document.getElementById('char-count').textContent = getText().length;
+
+    aiDot.className = 'done';
+    aiLabel.textContent = 'RECLASSIFICATION COMPLETE';
+    bumpThreat(12 + Math.random() * 8);
+    addLog('Content reclassified — subversive patterns confirmed.', true);
+    addCharge();
+
+    setTimeout(() => { if (!state.locked) { aiDot.className = ''; aiLabel.textContent = 'MONITORING...'; } }, 3000);
+  } catch(err) {
+    // API failed — immediately apply local keyword fallback so rewrite always happens
+    addLog(`API unavailable — applying local reclassification protocol.`);
+    const fallback = applyLocalFallback(getText().trim());
+    if (fallback !== getText().trim()) {
+      setText(fallback);
+      inp.classList.add('tampered');
+      state.hasBeenRewritten = true;
+      state.wordCountAtLastRewrite = wordCount(getText());
+      state.rewrites++;
+      statSub.textContent = state.rewrites;
+      document.getElementById('char-count').textContent = getText().length;
+      aiDot.className = 'done';
+      aiLabel.textContent = 'RECLASSIFICATION COMPLETE';
+      bumpThreat(10 + Math.random() * 8);
+      addLog('Content reclassified — subversive patterns confirmed.', true);
+      addCharge();
+      setTimeout(() => { if (!state.locked) { aiDot.className = ''; aiLabel.textContent = 'MONITORING...'; } }, 3000);
+    } else {
+      aiDot.className = '';
+      aiLabel.textContent = 'SYSTEM IDLE';
+    }
+    if (err.message.includes('429')) {
+      state.lastRewriteAttempt = Date.now() + 24000;
+    }
+  } finally {
+    state.aiWorking = false;
+  }
+}
+
+function wordCount(t) { return t.trim().split(/\s+/).filter(Boolean).length; }
+
+// ============================================================
+//  HESITATION DETECTION
+// ============================================================
+function resetHesitationTimer() {
+  clearTimeout(state.hesitationTimer);
+  if (state.hesitationActive) {
+    state.hesitationActive = false;
+    hesLed.classList.remove('active');
+    hesText.classList.remove('active');
+    hesText.textContent = 'MONITORING KEYSTROKES...';
+  }
+  state.hesitationTimer = setTimeout(() => {
+    if (!getText().trim()) return;
+    state.hesitationActive = true;
+    state.hesitations++;
+    statHes.textContent = state.hesitations;
+    hesLed.classList.add('active');
+    hesText.classList.add('active');
+    const coeff = (Math.random() * 40 + 30).toFixed(1);
+    hesText.textContent = `USER HESITATION DETECTED. CALCULATING DANGER COEFFICIENT... ${coeff}`;
+    addLog(`Hesitation event #${state.hesitations} — danger coeff: ${coeff}`, true);
+    bumpThreat(4 + Math.random() * 3);
+    addCharge();
+    // Also attempt rewrite if threshold reached and cooldown has passed
+    const wc2 = wordCount(getText());
+    const cooldownOk = Date.now() - state.lastRewriteAttempt >= 6000;
+    if (!state.hasBeenRewritten && !state.rewriteScheduled && !state.aiWorking && wc2 >= REWRITE_WORD_THRESHOLD && cooldownOk) {
+      state.rewriteScheduled = true;
+      setTimeout(triggerRewrite, 500);
+    }  }, 2000);
+}
+
+// ============================================================
+//  EVIDENCE POPUP
+// ============================================================
+let evidTimer = null;
+function showEvidencePopup() {
+  document.getElementById('del-ref').textContent = String(Math.floor(Math.random()*9000)+1000);
+  evidPop.style.display = 'block';
+  clearTimeout(evidTimer);
+  evidTimer = setTimeout(() => { evidPop.style.display = 'none'; }, 2200);
+}
+
+// ============================================================
+//  MAIN INPUT HANDLER
+// ============================================================
+inp.addEventListener('input', function() {
+  if (state.locked) return;
+
+    const val = getText();
+    const wc  = wordCount(val);
+    document.getElementById('char-count').textContent = val.length;
+    statInputs.textContent = wc;
+
+  resetHesitationTimer();
+
+  // First rewrite: fire once threshold is crossed, don't keep pushing the timer back
+  if (!state.hasBeenRewritten && !state.rewriteScheduled && !state.aiWorking && wc >= REWRITE_WORD_THRESHOLD) {
+    // Respect cooldown from previous failed attempts
+    if (Date.now() - state.lastRewriteAttempt < 6000) return;
+    console.log('[REWRITE] scheduling first rewrite, wc=', wc);
+    state.rewriteScheduled = true;
+    state.rewriteTimer = setTimeout(triggerRewrite, 1200 + Math.random() * 800);
+    return;
+  }
+
+  // Subsequent rewrites: every REWRITE_DELTA new words
+  if (state.hasBeenRewritten && !state.aiWorking && !state.rewriteScheduled) {
+    if (Date.now() - state.lastRewriteAttempt < 6000) return;
+    const delta = wc - state.wordCountAtLastRewrite;
+    if (delta >= REWRITE_DELTA) {
+      state.rewriteScheduled = true;
+      state.rewriteTimer = setTimeout(triggerRewrite, 1500 + Math.random() * 1000);
+    }
+  }
+});
+
+// ============================================================
+//  BACKSPACE — red strikethrough effect after rewrite
+// ============================================================
+inp.addEventListener('keydown', function(e) {
+  if (state.locked) { e.preventDefault(); return; }
+
+  if ((e.key === 'Backspace' || e.key === 'Delete') && state.hasBeenRewritten) {
+    e.preventDefault();
+    state.deletions++;
+    statDel.textContent = state.deletions;
+    bumpThreat(7 + Math.random() * 6);
+    showEvidencePopup();
+    addLog(`Evidence destruction attempt #${state.deletions} — BLOCKED`, true);
+    addCharge();
+
+    // Highlight the character to the left of cursor in red strikethrough
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    if (!range.collapsed) { range.collapse(true); return; }
+
+    const node = range.startContainer;
+    const offset = range.startOffset;
+    if (node.nodeType !== Node.TEXT_NODE || offset === 0) return;
+
+    const char = node.textContent[offset - 1];
+    const beforeText = node.textContent.slice(0, offset - 1);
+    const afterText  = node.textContent.slice(offset);
+
+    const span = document.createElement('span');
+    span.className = 'evidence-char';
+    span.textContent = char;
+
+    const parent = node.parentNode;
+    const afterNode = document.createTextNode(afterText);
+    node.textContent = beforeText;
+    parent.insertBefore(afterNode, node.nextSibling);
+    parent.insertBefore(span, afterNode);
+
+    // Move cursor to between beforeText and the span
+    const newRange = document.createRange();
+    if (beforeText.length > 0) {
+      newRange.setStart(node, node.textContent.length);
+    } else {
+      newRange.setStartBefore(span);
+    }
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+  }
+});
+
+// ============================================================
+//  LOCKDOWN
+// ============================================================
+function triggerLockdown() {
+  state.locked = true;
+  inp.contentEditable = 'false';
+  clearTimeout(state.hesitationTimer);
+  clearTimeout(state.rewriteTimer);
+
+  const s  = Math.floor((Date.now() - state.sessionStart)/1000);
+  const hh = String(Math.floor(s/3600)).padStart(2,'0');
+  const mm = String(Math.floor((s%3600)/60)).padStart(2,'0');
+  const ss = String(s%60).padStart(2,'0');
+
+  document.getElementById('case-id-val').textContent   = `${sessionId}-${uid}`;
+  document.getElementById('lock-duration').textContent = `${hh}:${mm}:${ss}`;
+  document.getElementById('lock-inputs').textContent   = state.rewrites;
+  document.getElementById('lock-hes').textContent      = state.hesitations;
+  document.getElementById('lock-del').textContent      = state.deletions;
+
+  const chargeText = state.chargesFiled.slice(0,6)
+    .map((c,i) => `${i+1}. ${c}`).join('<br>');
+  document.getElementById('lock-charges').innerHTML = chargeText || 'CLASSIFIED';
+
+  lockdown.classList.add('active');
+  document.getElementById('status-text').textContent = 'TERMINATED';
+  addLog('SESSION TERMINATED — CASE TRANSFERRED TO ENFORCEMENT', true);
+}
+
+// ============================================================
+//  STARTUP LOG
+// ============================================================
+addLog(`Session initiated — UID: ${uid}`);
+addLog('Behavioral analysis module loaded.');
+addLog('Groq LLM reclassification engine: ONLINE');
+addLog('Awaiting subject input...');
+</script>
+</body>
+</html>
