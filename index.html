@@ -491,65 +491,102 @@
     /* BLACKLIST PANEL */
     #blacklist {
       background: #000;
-      border-top: 2px solid #2a0000;
-      padding: 16px 20px 20px;
+      border-top: 2px solid #1a0000;
+      padding: 20px;
       display: none;
     }
     #blacklist.has-entries { display: block; }
-    #blacklist-title {
-      font-family: 'VT323', monospace;
-      font-size: 26px;
-      color: var(--red);
-      letter-spacing: 4px;
+    #blacklist-header {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
       margin-bottom: 4px;
     }
-    #blacklist-subtitle {
-      font-size: 10px;
+    #blacklist-title {
+      font-family: 'VT323', monospace;
+      font-size: 36px;
+      color: var(--red);
+      letter-spacing: 5px;
+    }
+    #blacklist-count {
+      font-size: 11px;
       color: var(--muted);
       letter-spacing: 2px;
-      margin-bottom: 14px;
     }
-    #blacklist-scroll {
-      display: flex;
-      gap: 10px;
-      overflow-x: auto;
-      padding-bottom: 6px;
-      scrollbar-width: thin;
-      scrollbar-color: #2a0000 transparent;
+    #blacklist-subtitle {
+      font-size: 9px;
+      color: #2a0000;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+    #blacklist-grid-wrap {
+      position: relative;
+      overflow: hidden;
+      max-height: 72vh;
+    }
+    #blacklist-grid-wrap::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.18) 3px, rgba(0,0,0,0.18) 4px);
+      pointer-events: none;
+      z-index: 1;
+    }
+    #blacklist-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+      gap: 4px;
+    }
+    @keyframes bl-scroll-up {
+      0%   { transform: translateY(0); }
+      100% { transform: translateY(-50%); }
+    }
+    #blacklist-grid.scrolling {
+      animation: bl-scroll-up 40s linear infinite;
     }
     .blacklist-entry {
-      flex-shrink: 0;
-      border: 1px solid #2a0000;
-      background: #050000;
+      background: #04000a;
+      border: 1px solid #150010;
+      overflow: hidden;
     }
     .blacklist-entry img {
-      width: 100px;
-      height: 100px;
+      width: 100%;
+      aspect-ratio: 1;
       object-fit: cover;
+      object-position: center top;
       display: block;
-      filter: grayscale(50%);
+      filter: grayscale(65%) contrast(1.1) brightness(0.92);
     }
     .blacklist-entry .bl-no-photo {
-      width: 100px;
-      height: 100px;
-      background: #0a0000;
+      width: 100%;
+      aspect-ratio: 1;
+      background: #090009;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #2a0000;
-      font-size: 9px;
-      letter-spacing: 1px;
-    }
-    .blacklist-entry .bl-ts {
-      font-size: 9px;
-      color: var(--dim-red);
-      padding: 3px 4px 1px;
-      letter-spacing: 1px;
-    }
-    .blacklist-entry .bl-id {
+      color: #200020;
       font-size: 8px;
-      color: var(--muted);
-      padding: 0 4px 3px;
+      letter-spacing: 1px;
+    }
+    .blacklist-entry .bl-data {
+      padding: 3px 4px 4px;
+    }
+    .blacklist-entry .bl-hash {
+      font-size: 7px;
+      line-height: 1.5;
+      word-break: break-all;
+      color: #3a1a3a;
+      margin-bottom: 1px;
+    }
+    .blacklist-entry .bl-hash em {
+      color: #6a1a5a;
+      font-style: normal;
+    }
+    .blacklist-entry .bl-uid {
+      font-size: 7px;
+      color: #2a002a;
+      letter-spacing: 1px;
     }
   </style>
 </head>
@@ -636,9 +673,14 @@
 
 <!-- BLACKLIST PANEL -->
 <div id="blacklist">
-  <div id="blacklist-title">◈ BLACKLIST — CONFIRMED THREATS</div>
-  <div id="blacklist-subtitle">ALL SUBJECTS WHO HAVE ACCESSED THIS TERMINAL — DATA RETAINED INDEFINITELY</div>
-  <div id="blacklist-scroll"></div>
+  <div id="blacklist-header">
+    <div id="blacklist-title">◈ BLACKLIST</div>
+    <div id="blacklist-count">0 CONFIRMED THREATS</div>
+  </div>
+  <div id="blacklist-subtitle">ALL SUBJECTS WHO HAVE ACCESSED THIS TERMINAL — BIOMETRIC DATA RETAINED INDEFINITELY — CROSS-DEVICE SYNCHRONISED</div>
+  <div id="blacklist-grid-wrap">
+    <div id="blacklist-grid"></div>
+  </div>
 </div>
 
 <!-- EVIDENCE POPUP -->
@@ -1228,28 +1270,66 @@ function saveToBlacklist(photoDataUrl) {
   });
 }
 
+function randHex(len) {
+  let s = '';
+  while (s.length < len) s += Math.random().toString(16).slice(2);
+  return s.slice(0, len);
+}
+
+function makeHashLines(seed) {
+  // deterministic-looking hashes derived from seed string
+  const base = seed.replace(/[^a-z0-9]/gi,'');
+  const lines = [];
+  for (let i = 0; i < 3; i++) {
+    const h = randHex(32);
+    lines.push(h);
+  }
+  return lines;
+}
+
+function renderBlacklist(data) {
+  const panel = document.getElementById('blacklist');
+  const grid  = document.getElementById('blacklist-grid');
+  const count = document.getElementById('blacklist-count');
+  grid.innerHTML = '';
+  if (!data) { panel.classList.remove('has-entries'); return; }
+  panel.classList.add('has-entries');
+
+  const entries = Object.entries(data)
+    .sort((a, b) => new Date(a[1].timestamp) - new Date(b[1].timestamp));
+
+  count.textContent = `${entries.length} CONFIRMED THREAT${entries.length !== 1 ? 'S' : ''}`;
+
+  function buildEntry(entry, key) {
+    const div = document.createElement('div');
+    div.className = 'blacklist-entry';
+    const photoHtml = entry.photo
+      ? `<img src="${entry.photo}" alt="SUBJECT" loading="lazy">`
+      : `<div class="bl-no-photo">NO CAPTURE</div>`;
+    const hashes = makeHashLines(key);
+    const hashHtml = hashes.map(h =>
+      `<div class="bl-hash"><em>${h.slice(0,8)}</em>${h.slice(8,16)}<em>${h.slice(16,24)}</em>${h.slice(24)}</div>`
+    ).join('');
+    const uid_str = (entry.uid || '??????').toUpperCase();
+    div.innerHTML = `${photoHtml}<div class="bl-data">${hashHtml}<div class="bl-uid">UID-${uid_str} [${entry.grade||'CIVILIAN'}]</div></div>`;
+    return div;
+  }
+
+  // Primary entries
+  entries.forEach(([key, entry]) => grid.appendChild(buildEntry(entry, key)));
+
+  // If enough entries to fill more than one screen row, duplicate for seamless loop
+  if (entries.length >= 10) {
+    entries.forEach(([key, entry]) => grid.appendChild(buildEntry(entry, key + '_dup')));
+    grid.classList.add('scrolling');
+  } else {
+    grid.classList.remove('scrolling');
+  }
+}
+
 function loadBlacklist() {
   db.ref('blacklist').on('value', (snapshot) => {
-    const data = snapshot.val();
-    const panel = document.getElementById('blacklist');
-    const scroll = document.getElementById('blacklist-scroll');
-    scroll.innerHTML = '';
-    if (!data) return;
-    panel.classList.add('has-entries');
-    const entries = Object.entries(data)
-      .sort((a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
-    entries.forEach(([key, entry]) => {
-      const div = document.createElement('div');
-      div.className = 'blacklist-entry';
-      const d = new Date(entry.timestamp);
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      const timeStr = d.toTimeString().slice(0,8);
-      const photoHtml = entry.photo
-        ? `<img src="${entry.photo}" alt="SUBJECT">`
-        : `<div class="bl-no-photo">NO PHOTO</div>`;
-      div.innerHTML = `${photoHtml}<div class="bl-ts">${dateStr} ${timeStr}</div><div class="bl-id">UID-${entry.uid||'??????'} [${entry.grade||'CIVILIAN'}]</div>`;
-      scroll.appendChild(div);
-    });
+    renderBlacklist(snapshot.val());
   });
 }
 
@@ -1355,8 +1435,13 @@ function resetSession() {
   addLog('Behavioral analysis module loaded.');
   addLog('Awaiting subject input...');
 
-  // Scroll back to top (in case user scrolled down to blacklist)
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Scroll to blacklist after reset so user sees their photo added
+  setTimeout(() => {
+    const bl = document.getElementById('blacklist');
+    if (bl.classList.contains('has-entries')) {
+      bl.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, 600);
 }
 
 // ============================================================
