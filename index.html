@@ -1243,6 +1243,9 @@ async function triggerLockdown() {
   addEntryToGrid(entryData, uid + Date.now());
   saveToBlacklist(photo);
 
+  // Start listening to Firebase now so all other devices' entries appear too
+  loadBlacklist();
+
   lockdown.classList.add('active');
   document.getElementById('status-text').textContent = 'TERMINATED';
   addLog('SESSION TERMINATED — CASE TRANSFERRED TO ENFORCEMENT', true);
@@ -1362,7 +1365,10 @@ function renderBlacklist(data) {
   }
 }
 
+let blacklistListening = false;
 function loadBlacklist() {
+  if (blacklistListening) return;
+  blacklistListening = true;
   db.ref('blacklist').on('value', (snapshot) => {
     renderBlacklist(snapshot.val());
   });
@@ -1498,7 +1504,6 @@ function resetSession() {
 //  STARTUP
 // ============================================================
 initCamera();
-loadBlacklist();
 
 // ============================================================
 //  STARTUP LOG
