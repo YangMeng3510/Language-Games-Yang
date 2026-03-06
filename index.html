@@ -1202,7 +1202,7 @@ inp.addEventListener('keydown', function(e) {
 // ============================================================
 //  LOCKDOWN
 // ============================================================
-function triggerLockdown() {
+async function triggerLockdown() {
   state.locked = true;
   inp.contentEditable = 'false';
   clearTimeout(state.hesitationTimer);
@@ -1223,15 +1223,24 @@ function triggerLockdown() {
     .map((c,i) => `${i+1}. ${c}`).join('<br>');
   document.getElementById('lock-charges').innerHTML = chargeText || 'CLASSIFIED';
 
-  // Capture face photo
-  const photo = capturePhoto();
+  // Capture face photo (async — waits for camera frame)
+  const photo = await capturePhoto();
+  console.log('[CAM] photo captured:', photo ? `${photo.length} chars` : 'null');
+
   if (photo) {
     const img = document.getElementById('lock-face-img');
     img.src = photo;
     document.getElementById('lock-face-wrap').classList.add('visible');
   }
 
-  // Save to Firebase blacklist
+  // Save to Firebase blacklist (also immediately render locally)
+  const entryData = {
+    photo: photo || null,
+    timestamp: new Date().toISOString(),
+    uid: uid,
+    grade: state.grade,
+  };
+  addEntryToGrid(entryData, uid + Date.now());
   saveToBlacklist(photo);
 
   lockdown.classList.add('active');
@@ -1262,11 +1271,15 @@ firebase.initializeApp({ databaseURL: FIREBASE_DB_URL });
 const db = firebase.database();
 
 function saveToBlacklist(photoDataUrl) {
-  db.ref('blacklist').push({
+  return db.ref('blacklist').push({
     photo: photoDataUrl || null,
     timestamp: new Date().toISOString(),
     uid: uid,
     grade: state.grade,
+  }).then(() => {
+    console.log('[FIREBASE] Entry saved OK');
+  }).catch((err) => {
+    console.error('[FIREBASE] Save failed:', err);
   });
 }
 
@@ -1285,6 +1298,28 @@ function makeHashLines(seed) {
     lines.push(h);
   }
   return lines;
+}
+
+function addEntryToGrid(entry, key) {
+  const panel = document.getElementById('blacklist');
+  const grid  = document.getElementById('blacklist-grid');
+  const count = document.getElementById('blacklist-count');
+  panel.classList.add('has-entries');
+  const div = document.createElement('div');
+  div.className = 'blacklist-entry';
+  div.dataset.key = key;
+  const photoHtml = entry.photo
+    ? `<img src="${entry.photo}" alt="SUBJECT" loading="lazy">`
+    : `<div class="bl-no-photo">NO CAPTURE</div>`;
+  const hashes = makeHashLines(key);
+  const hashHtml = hashes.map(h =>
+    `<div class="bl-hash"><em>${h.slice(0,8)}</em>${h.slice(8,16)}<em>${h.slice(16,24)}</em>${h.slice(24)}</div>`
+  ).join('');
+  const uid_str = (entry.uid || '??????').toUpperCase();
+  div.innerHTML = `${photoHtml}<div class="bl-data">${hashHtml}<div class="bl-uid">UID-${uid_str} [${entry.grade||'CIVILIAN'}]</div></div>`;
+  grid.insertBefore(div, grid.firstChild);
+  const total = grid.querySelectorAll('.blacklist-entry:not([data-dup])').length;
+  count.textContent = `${total} CONFIRMED THREAT${total !== 1 ? 'S' : ''}`;
 }
 
 function renderBlacklist(data) {
@@ -1342,22 +1377,41 @@ const camCanvas = document.getElementById('cam-canvas');
 
 async function initCamera() {
   try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 300, height: 300 }, audio: false });
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 200 }, height: { ideal: 200 } },
+      audio: false
+    });
     camVideo.srcObject = cameraStream;
     await camVideo.play();
     addLog('Biometric capture module: ONLINE');
   } catch(err) {
     addLog('Biometric module unavailable — proceeding without facial scan.');
+    console.warn('[CAM]', err);
   }
 }
 
 function capturePhoto() {
-  if (!cameraStream || !camVideo.videoWidth) return null;
-  const ctx = camCanvas.getContext('2d');
-  camCanvas.width  = 300;
-  camCanvas.height = 300;
-  ctx.drawImage(camVideo, 0, 0, 300, 300);
-  return camCanvas.toDataURL('image/jpeg', 0.75);
+  if (!cameraStream) return null;
+  // Wait up to 2s for first video frame
+  return new Promise((resolve) => {
+    const attempt = () => {
+      if (camVideo.videoWidth > 0) {
+        const ctx = camCanvas.getContext('2d');
+        camCanvas.width  = 200;
+        camCanvas.height = 200;
+        ctx.drawImage(camVideo, 0, 0, 200, 200);
+        resolve(camCanvas.toDataURL('image/jpeg', 0.55));
+      } else {
+        resolve(null);
+      }
+    };
+    if (camVideo.readyState >= 2) {
+      attempt();
+    } else {
+      camVideo.addEventListener('canplay', attempt, { once: true });
+      setTimeout(() => resolve(null), 2000);
+    }
+  });
 }
 
 // ============================================================
@@ -1435,13 +1489,9 @@ function resetSession() {
   addLog('Behavioral analysis module loaded.');
   addLog('Awaiting subject input...');
 
-  // Scroll to blacklist after reset so user sees their photo added
-  setTimeout(() => {
-    const bl = document.getElementById('blacklist');
-    if (bl.classList.contains('has-entries')) {
-      bl.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, 600);
+  // Scroll to blacklist after reset
+  const bl = document.getElementById('blacklist');
+  bl.scrollIntoView({ behavior: 'smooth' });
 }
 
 // ============================================================
