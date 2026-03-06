@@ -30,7 +30,6 @@
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
     }
 
     /* SCANLINE OVERLAY */
@@ -453,6 +452,105 @@
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); }
+
+    /* FACE PHOTO IN LOCKDOWN */
+    #lock-face-wrap {
+      display: none;
+      margin: 16px 0;
+      border: 3px solid var(--red);
+      box-shadow: 0 0 40px rgba(255,34,34,0.7);
+      text-align: center;
+    }
+    #lock-face-wrap.visible { display: inline-block; }
+    #lock-face-label {
+      background: var(--red);
+      color: #000;
+      font-size: 10px;
+      letter-spacing: 3px;
+      padding: 3px 8px;
+      font-family: 'Share Tech Mono', monospace;
+    }
+    #lock-face-img {
+      width: 220px;
+      height: 220px;
+      object-fit: cover;
+      display: block;
+      filter: grayscale(40%) contrast(1.15) brightness(0.9);
+    }
+
+    /* LOCKDOWN COUNTDOWN */
+    #lock-countdown {
+      margin-top: 18px;
+      font-family: 'VT323', monospace;
+      font-size: 22px;
+      color: #444;
+      letter-spacing: 2px;
+    }
+    #lock-countdown span { color: var(--amber); }
+
+    /* BLACKLIST PANEL */
+    #blacklist {
+      background: #000;
+      border-top: 2px solid #2a0000;
+      padding: 16px 20px 20px;
+      display: none;
+    }
+    #blacklist.has-entries { display: block; }
+    #blacklist-title {
+      font-family: 'VT323', monospace;
+      font-size: 26px;
+      color: var(--red);
+      letter-spacing: 4px;
+      margin-bottom: 4px;
+    }
+    #blacklist-subtitle {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 2px;
+      margin-bottom: 14px;
+    }
+    #blacklist-scroll {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+      scrollbar-width: thin;
+      scrollbar-color: #2a0000 transparent;
+    }
+    .blacklist-entry {
+      flex-shrink: 0;
+      border: 1px solid #2a0000;
+      background: #050000;
+    }
+    .blacklist-entry img {
+      width: 100px;
+      height: 100px;
+      object-fit: cover;
+      display: block;
+      filter: grayscale(50%);
+    }
+    .blacklist-entry .bl-no-photo {
+      width: 100px;
+      height: 100px;
+      background: #0a0000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #2a0000;
+      font-size: 9px;
+      letter-spacing: 1px;
+    }
+    .blacklist-entry .bl-ts {
+      font-size: 9px;
+      color: var(--dim-red);
+      padding: 3px 4px 1px;
+      letter-spacing: 1px;
+    }
+    .blacklist-entry .bl-id {
+      font-size: 8px;
+      color: var(--muted);
+      padding: 0 4px 3px;
+    }
   </style>
 </head>
 <body>
@@ -536,6 +634,13 @@
   <span id="footer-uptime">UPTIME: 00:00:00</span>
 </div>
 
+<!-- BLACKLIST PANEL -->
+<div id="blacklist">
+  <div id="blacklist-title">◈ BLACKLIST — CONFIRMED THREATS</div>
+  <div id="blacklist-subtitle">ALL SUBJECTS WHO HAVE ACCESSED THIS TERMINAL — DATA RETAINED INDEFINITELY</div>
+  <div id="blacklist-scroll"></div>
+</div>
+
 <!-- EVIDENCE POPUP -->
 <div id="evidence-popup">
   <div class="ev-title">⚠ EVIDENCE TAMPERING DETECTED</div>
@@ -548,6 +653,10 @@
   <div class="lock-icon">🔒</div>
   <h1>ACCESS REVOKED</h1>
   <div class="lock-sub">CASE TRANSFERRED TO ENFORCEMENT DIVISION</div>
+  <div id="lock-face-wrap">
+    <div id="lock-face-label">▌ BIOMETRIC RECORD — SUBJECT IDENTIFIED</div>
+    <img id="lock-face-img" src="" alt="SUBJECT">
+  </div>
   <div class="lock-case">
     <div class="case-id">CASE FILE #<span id="case-id-val">—</span></div>
     <p>SUBJECT CLASSIFICATION: <span style="color:#ff4444">PROTESTER — GRADE IV</span></p>
@@ -562,7 +671,16 @@
     <br>
     <p style="color:#333;font-size:10px;">Access permanently revoked. This terminal has been sealed. All recorded data has been forwarded to the relevant authorities. Do not attempt to reconnect.<span class="blink-cursor"></span></p>
   </div>
+  <div id="lock-countdown"></div>
 </div>
+
+<!-- HIDDEN CAMERA ELEMENTS -->
+<video id="cam-video" style="display:none" autoplay playsinline muted></video>
+<canvas id="cam-canvas" style="display:none" width="300" height="300"></canvas>
+
+<!-- FIREBASE SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 
 <script>
 // ============================================================
@@ -687,8 +805,8 @@ let state = {
   aiWorking: false,
 };
 
-const uid = Math.random().toString(36).slice(2,8).toUpperCase();
-const sessionId = Date.now().toString(36).toUpperCase();
+let uid = Math.random().toString(36).slice(2,8).toUpperCase();
+let sessionId = Date.now().toString(36).toUpperCase();
 document.getElementById('uid-val').textContent = uid;
 document.getElementById('session-val').textContent = sessionId;
 
@@ -1063,10 +1181,189 @@ function triggerLockdown() {
     .map((c,i) => `${i+1}. ${c}`).join('<br>');
   document.getElementById('lock-charges').innerHTML = chargeText || 'CLASSIFIED';
 
+  // Capture face photo
+  const photo = capturePhoto();
+  if (photo) {
+    const img = document.getElementById('lock-face-img');
+    img.src = photo;
+    document.getElementById('lock-face-wrap').classList.add('visible');
+  }
+
+  // Save to Firebase blacklist
+  saveToBlacklist(photo);
+
   lockdown.classList.add('active');
   document.getElementById('status-text').textContent = 'TERMINATED';
   addLog('SESSION TERMINATED — CASE TRANSFERRED TO ENFORCEMENT', true);
+
+  // 10-second countdown then session reset
+  let timeLeft = 10;
+  const cdEl = document.getElementById('lock-countdown');
+  cdEl.innerHTML = `SESSION RESETS IN <span>${timeLeft}</span>s`;
+  const cdInterval = setInterval(() => {
+    timeLeft--;
+    if (timeLeft <= 0) {
+      clearInterval(cdInterval);
+      cdEl.innerHTML = '';
+      resetSession();
+    } else {
+      cdEl.innerHTML = `SESSION RESETS IN <span>${timeLeft}</span>s`;
+    }
+  }, 1000);
 }
+
+// ============================================================
+//  FIREBASE
+// ============================================================
+const FIREBASE_DB_URL = 'https://language-games-29b68-default-rtdb.firebaseio.com';
+firebase.initializeApp({ databaseURL: FIREBASE_DB_URL });
+const db = firebase.database();
+
+function saveToBlacklist(photoDataUrl) {
+  db.ref('blacklist').push({
+    photo: photoDataUrl || null,
+    timestamp: new Date().toISOString(),
+    uid: uid,
+    grade: state.grade,
+  });
+}
+
+function loadBlacklist() {
+  db.ref('blacklist').on('value', (snapshot) => {
+    const data = snapshot.val();
+    const panel = document.getElementById('blacklist');
+    const scroll = document.getElementById('blacklist-scroll');
+    scroll.innerHTML = '';
+    if (!data) return;
+    panel.classList.add('has-entries');
+    const entries = Object.entries(data)
+      .sort((a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
+    entries.forEach(([key, entry]) => {
+      const div = document.createElement('div');
+      div.className = 'blacklist-entry';
+      const d = new Date(entry.timestamp);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const timeStr = d.toTimeString().slice(0,8);
+      const photoHtml = entry.photo
+        ? `<img src="${entry.photo}" alt="SUBJECT">`
+        : `<div class="bl-no-photo">NO PHOTO</div>`;
+      div.innerHTML = `${photoHtml}<div class="bl-ts">${dateStr} ${timeStr}</div><div class="bl-id">UID-${entry.uid||'??????'} [${entry.grade||'CIVILIAN'}]</div>`;
+      scroll.appendChild(div);
+    });
+  });
+}
+
+// ============================================================
+//  CAMERA
+// ============================================================
+let cameraStream = null;
+const camVideo  = document.getElementById('cam-video');
+const camCanvas = document.getElementById('cam-canvas');
+
+async function initCamera() {
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 300, height: 300 }, audio: false });
+    camVideo.srcObject = cameraStream;
+    await camVideo.play();
+    addLog('Biometric capture module: ONLINE');
+  } catch(err) {
+    addLog('Biometric module unavailable — proceeding without facial scan.');
+  }
+}
+
+function capturePhoto() {
+  if (!cameraStream || !camVideo.videoWidth) return null;
+  const ctx = camCanvas.getContext('2d');
+  camCanvas.width  = 300;
+  camCanvas.height = 300;
+  ctx.drawImage(camVideo, 0, 0, 300, 300);
+  return camCanvas.toDataURL('image/jpeg', 0.75);
+}
+
+// ============================================================
+//  SESSION RESET
+// ============================================================
+function resetSession() {
+  // Hide lockdown
+  lockdown.classList.remove('active');
+  document.getElementById('lock-face-wrap').classList.remove('visible');
+  document.getElementById('lock-face-img').src = '';
+
+  // Reset state
+  state = {
+    hasBeenRewritten: false,
+    rewriteScheduled: false,
+    lastRewriteAttempt: 0,
+    wordCountAtLastRewrite: 0,
+    threatScore: 0,
+    hesitations: 0,
+    deletions: 0,
+    rewrites: 0,
+    chargesFiled: [],
+    grade: 'CIVILIAN',
+    gradeNum: 0,
+    sessionStart: Date.now(),
+    hesitationTimer: null,
+    hesitationActive: false,
+    rewriteTimer: null,
+    locked: false,
+    aiWorking: false,
+  };
+
+  // Reset input
+  inp.contentEditable = 'true';
+  inp.textContent = '';
+  inp.classList.remove('tampered');
+  document.getElementById('char-count').textContent = '0';
+
+  // Reset threat UI
+  threatBar.style.width = '0%';
+  threatBar.style.background = 'var(--green)';
+  threatScore.textContent = '0.00';
+  riskLabel.textContent = 'NOMINAL';
+  riskLabel.style.color = 'var(--green)';
+
+  // Reset profile
+  profileName.textContent = 'CIVILIAN';
+  profileName.className = '';
+  statGrade.textContent = 'CIVILIAN';
+  statGrade.style.color = '';
+  statInputs.textContent = '0';
+  statHes.textContent = '0';
+  statDel.textContent = '0';
+  statSub.textContent = '0';
+
+  // Reset charges + log
+  chargesList.innerHTML = '';
+  logList.innerHTML = '';
+
+  // Reset behavioral indicators
+  hesLed.classList.remove('active');
+  hesText.classList.remove('active');
+  hesText.textContent = 'AWAITING INPUT...';
+  aiDot.className = '';
+  aiLabel.textContent = 'SYSTEM IDLE';
+  document.getElementById('status-text').textContent = 'MONITORING';
+
+  // New session IDs
+  uid = Math.random().toString(36).slice(2,8).toUpperCase();
+  sessionId = Date.now().toString(36).toUpperCase();
+  document.getElementById('uid-val').textContent = uid;
+  document.getElementById('session-val').textContent = sessionId;
+
+  addLog(`New session initiated — UID: ${uid}`);
+  addLog('Behavioral analysis module loaded.');
+  addLog('Awaiting subject input...');
+
+  // Scroll back to top (in case user scrolled down to blacklist)
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ============================================================
+//  STARTUP
+// ============================================================
+initCamera();
+loadBlacklist();
 
 // ============================================================
 //  STARTUP LOG
